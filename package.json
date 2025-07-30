@@ -1,0 +1,145 @@
+{
+  "name": "MMM-AIVoiceAssistant",
+  "version": "1.0.0",
+  "description": "A comprehensive MagicMirror module that integrates OpenAI, ChatGPT, or Google Gemini APIs with voice recognition and text-to-speech capabilities. Perfect for college dorms with customizable wake words and live chatting features.",
+  "main": "MMM-AIVoiceAssistant.js",
+  "keywords": [
+    "MagicMirror",
+    "voice assistant",
+    "AI",
+    "OpenAI",
+    "Gemini",
+    "ChatGPT",
+    "speech recognition",
+    "text-to-speech",
+    "smart mirror",
+    "college dorm",
+    "wake word",
+    "conversation",
+    "raspberry pi"
+  ],
+  "author": {
+    "name": "bspeck",
+    "email": "bspeck@gmail.com",
+    "url": "https://github.com/bspeck"
+  },
+  "contributors": [
+    {
+      "name": "Claude AI",
+      "url": "https://claude.ai"
+    }
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bspeck/MMM-AIVoiceAssistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bspeck/MMM-AIVoiceAssistant/issues"
+  },
+  "homepage": "https://github.com/bspeck/MMM-AIVoiceAssistant#readme",
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint *.js",
+    "start": "echo \"This is a MagicMirror module. Install it in your MagicMirror/modules directory.\"",
+    "install-global": "npm install -g",
+    "setup": "echo \"Setting up MMM-AIVoiceAssistant...\" && npm install"
+  },
+  "dependencies": {
+    "https": "^1.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "peerDependencies": {
+    "magicmirror": ">=2.20.0"
+  },
+  "magicmirror": {
+    "position": [
+      "top_left",
+      "top_center",
+      "top_right",
+      "upper_third",
+      "middle_center",
+      "lower_third",
+      "bottom_left",
+      "bottom_center",
+      "bottom_right",
+      "fullscreen_above",
+      "fullscreen_below"
+    ],
+    "category": "voice_assistant"
+  },
+  "config": {
+    "aiProvider": "openai",
+    "wakeWord": "hey redhawk",
+    "language": "en-US",
+    "voiceEnabled": true,
+    "debug": false
+  },
+  "installation": {
+    "requirements": [
+      "MagicMirror 2.20.0 or higher",
+      "Node.js 14.0.0 or higher",
+      "Modern browser with Web Speech API support",
+      "USB microphone (recommended)",
+      "Speakers or audio output device",
+      "HTTPS enabled (for Web Speech API)",
+      "OpenAI or Google Gemini API key"
+    ],
+    "steps": [
+      "Clone or download to MagicMirror/modules/",
+      "Run 'npm install' in module directory",
+      "Add module configuration to config.js",
+      "Add API keys to configuration",
+      "Enable HTTPS in MagicMirror",
+      "Grant microphone permissions in browser",
+      "Restart MagicMirror"
+    ]
+  },
+  "features": [
+    "Voice recognition with customizable wake words",
+    "Text-to-speech with natural voice selection",
+    "Multiple AI provider support (OpenAI, Gemini)",
+    "Live chat history and context",
+    "Beautiful glassmorphism UI design",
+    "USB microphone support",
+    "Raspberry Pi optimized",
+    "College dorm friendly features",
+    "Debug mode for troubleshooting",
+    "Responsive design",
+    "Auto-hide functionality",
+    "Error handling and recovery"
+  ],
+  "compatibility": {
+    "browsers": [
+      "Chrome/Chromium 25+",
+      "Firefox 44+",
+      "Safari 14.1+",
+      "Edge 79+"
+    ],
+    "platforms": [
+      "Raspberry Pi 3B+",
+      "Raspberry Pi 4",
+      "Linux",
+      "macOS",
+      "Windows"
+    ],
+    "magicmirror_versions": [
+      "2.20.0",
+      "2.21.0",
+      "2.22.0",
+      "2.23.0",
+      "2.24.0",
+      "2.25.0"
+    ]
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://github.com/sponsors/bspeck"
+  }
+}

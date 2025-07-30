@@ -7,7 +7,7 @@ Module.register("MMM-AIVoiceAssistant", {
         geminiApiKey: "", // Your Google Gemini API key
         
         // Voice Configuration
-        wakeWord: "hey mirror", // Customizable wake word
+        wakeWord: "hey redhawk", // Customizable wake word
         language: "en-US",
         voiceEnabled: true,
         speechRate: 1.0,
@@ -295,17 +295,59 @@ Module.register("MMM-AIVoiceAssistant", {
     speak: function(text) {
         if (!this.synthesis) return;
 
+        // Enhanced speech synthesis for more natural sound
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = this.config.speechRate;
-        utterance.pitch = this.config.speechPitch;
-        utterance.volume = this.config.speechVolume;
+        
+        // Try to use a more natural voice
+        const voices = this.synthesis.getVoices();
+        const preferredVoices = this.config.preferredVoices || [
+            "Google US English", "Microsoft Zira", "Alex", "Samantha"
+        ];
+        
+        let selectedVoice = null;
+        for (const preferred of preferredVoices) {
+            selectedVoice = voices.find(voice => 
+                voice.name.includes(preferred) || 
+                (voice.name.includes("Google") && voice.lang === "en-US") ||
+                (voice.name.includes("Microsoft") && voice.lang === "en-US")
+            );
+            if (selectedVoice) break;
+        }
+        
+        // Fallback to best English voice
+        if (!selectedVoice) {
+            selectedVoice = voices.find(voice => 
+                voice.lang === "en-US" && voice.name.includes("Female")
+            ) || voices.find(voice => voice.lang === "en-US");
+        }
+        
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+            this.log(`Using voice: ${selectedVoice.name}`);
+        }
+
+        // Natural speech settings
+        utterance.rate = this.config.speechRate || 0.9;
+        utterance.pitch = this.config.speechPitch || 1.1;
+        utterance.volume = this.config.speechVolume || 0.8;
         utterance.lang = this.config.language;
+
+        // Add natural pauses for longer responses
+        if (text.length > 100) {
+            utterance.rate *= 0.9; // Slow down for longer responses
+        }
 
         utterance.onend = () => {
             this.log("Finished speaking");
             this.scheduleHide();
         };
 
+        utterance.onerror = (error) => {
+            this.log("Speech synthesis error: " + error.error);
+        };
+
+        // Clear any existing speech and speak
+        this.synthesis.cancel();
         this.synthesis.speak(utterance);
     },
 
