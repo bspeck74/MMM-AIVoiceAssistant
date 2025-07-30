@@ -40,6 +40,7 @@ Module.register("MMM-AIVoiceAssistant", {
         this.hideTimer = null;
         this.microphoneError = false;
         this.audioStream = null;
+        this.recognitionActive = false; // Track recognition state
         
         this.initializeSpeechRecognition();
         this.initializeSpeechSynthesis();
@@ -171,9 +172,15 @@ Module.register("MMM-AIVoiceAssistant", {
         this.recognition.interimResults = true;
         this.recognition.lang = this.config.language;
         this.recognition.maxAlternatives = 1;
+        
+        // Add these settings to improve "no-speech" detection
+        this.recognition.grammars = null;
+        
+        this.recognitionActive = false; // Track recognition state
 
         this.recognition.onstart = () => {
             this.log("Speech recognition started");
+            this.recognitionActive = true;
             this.microphoneError = false;
             this.updateDom();
         };
@@ -192,8 +199,21 @@ Module.register("MMM-AIVoiceAssistant", {
             }
 
             const fullTranscript = (finalTranscript + interimTranscript).toLowerCase().trim();
+            this.log(`Speech detected: "${fullTranscript}"`);
             
-            if (!this.isListening && fullTranscript.includes(this.config.wakeWord.toLowerCase())) {
+            // More flexible wake word detection
+            const wakeWords = this.config.wakeWord.toLowerCase().split(' ');
+            const transcriptWords = fullTranscript.split(' ');
+            
+            let wakeWordDetected = false;
+            
+            // Check if all wake words are present (in any order within a window)
+            if (wakeWords.every(word => transcriptWords.some(tWord => tWord.includes(word)))) {
+                wakeWordDetected = true;
+            }
+            
+            if (!this.isListening && wakeWordDetected) {
+                this.log("Wake word detected!");
                 this.startListening();
             } else if (this.isListening && finalTranscript) {
                 this.processVoiceInput(finalTranscript);
@@ -201,45 +221,81 @@ Module.register("MMM-AIVoiceAssistant", {
         };
 
         this.recognition.onerror = (event) => {
-            Log.error("Speech recognition error:", event.error);
-            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                this.showMicrophoneError();
-            } else {
-                this.stopListening();
-                // Try to restart after a delay
-                setTimeout(() => {
-                    if (this.config.voiceEnabled && !this.microphoneError) {
-                        this.startRecognition();
-                    }
-                }, 2000);
+            this.log(`Speech recognition error: ${event.error}`);
+            
+            // Handle different error types
+            switch(event.error) {
+                case 'no-speech':
+                    this.log("No speech detected - continuing to listen");
+                    // Don't treat this as a fatal error, just continue
+                    break;
+                case 'audio-capture':
+                    Log.error("Audio capture error - check microphone");
+                    this.showMicrophoneError();
+                    return;
+                case 'not-allowed':
+                case 'service-not-allowed':
+                    Log.error("Microphone permission denied");
+                    this.showMicrophoneError();
+                    return;
+                case 'network':
+                    this.log("Network error - retrying");
+                    break;
+                default:
+                    this.log(`Other error: ${event.error} - retrying`);
             }
+            
+            // For recoverable errors, restart after a delay
+            this.recognitionActive = false;
+            setTimeout(() => {
+                if (this.config.voiceEnabled && !this.microphoneError) {
+                    this.startRecognition();
+                }
+            }, 2000);
         };
 
         this.recognition.onend = () => {
-            if (this.config.voiceEnabled && !this.microphoneError) {
+            this.log("Speech recognition ended");
+            this.recognitionActive = false;
+            
+            // Automatically restart if still enabled and no errors
+            if (this.config.voiceEnabled && !this.microphoneError && !this.isListening) {
                 setTimeout(() => {
                     this.startRecognition();
                 }, 1000);
             }
         };
 
+        // Start initial recognition
         if (this.config.voiceEnabled) {
             this.startRecognition();
         }
     },
 
     startRecognition: function() {
+        // Prevent multiple simultaneous recognitions
+        if (this.recognitionActive) {
+            this.log("Recognition already active, skipping start");
+            return;
+        }
+        
         if (this.recognition && !this.microphoneError) {
             try {
+                this.log("Starting speech recognition...");
                 this.recognition.start();
             } catch (error) {
                 this.log("Recognition start error: " + error.message);
-                // Try again after a delay
-                setTimeout(() => {
-                    if (this.config.voiceEnabled) {
-                        this.startRecognition();
-                    }
-                }, 3000);
+                if (error.message.includes('already started')) {
+                    this.log("Recognition was already started, continuing");
+                    this.recognitionActive = true;
+                } else {
+                    // Try again after a delay
+                    setTimeout(() => {
+                        if (this.config.voiceEnabled && !this.recognitionActive) {
+                            this.startRecognition();
+                        }
+                    }, 3000);
+                }
             }
         }
     },
