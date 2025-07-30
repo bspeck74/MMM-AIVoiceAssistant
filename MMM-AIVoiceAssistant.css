@@ -1,0 +1,233 @@
+/* MMM-AIVoiceAssistant/MMM-AIVoiceAssistant.css */
+
+.ai-voice-assistant {
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 15px;
+    padding: 20px;
+    margin: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
+    color: white;
+    font-family: 'Roboto', sans-serif;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.5s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 15px;
+    padding: 10px;
+}
+
+.status-icon {
+    font-size: 24px;
+    margin-right: 10px;
+    padding: 10px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.status-icon.idle {
+    background: rgba(128, 128, 128, 0.3);
+    color: #ccc;
+}
+
+.status-icon.listening {
+    background: rgba(76, 175, 80, 0.3);
+    color: #4CAF50;
+    animation: pulse 2s infinite;
+}
+
+.status-icon.error {
+    background: rgba(244, 67, 54, 0.3);
+    color: #f44336;
+    animation: errorPulse 2s infinite;
+}
+
+.status-text.error {
+    color: #f44336;
+    font-weight: bold;
+}
+
+@keyframes errorPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+    }
+}
+
+.status-text {
+    font-size: 16px;
+    font-weight: 300;
+    text-align: center;
+}
+
+.transcript {
+    background: rgba(33, 150, 243, 0.2);
+    border-left: 4px solid #2196F3;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.chat-history {
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 15px 0;
+    padding: 5px;
+}
+
+.message {
+    margin: 10px 0;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.4;
+    animation: messageSlide 0.3s ease-out;
+}
+
+@keyframes messageSlide {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.message.user {
+    background: rgba(33, 150, 243, 0.3);
+    border-left: 4px solid #2196F3;
+    margin-left: 20px;
+}
+
+.message.assistant {
+    background: rgba(76, 175, 80, 0.3);
+    border-left: 4px solid #4CAF50;
+    margin-right: 20px;
+}
+
+.message-role {
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    opacity: 0.8;
+}
+
+.message-content {
+    font-weight: 300;
+}
+
+.processing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 15px;
+    background: rgba(255, 193, 7, 0.2);
+    border-radius: 8px;
+    margin: 10px 0;
+    color: #FFC107;
+}
+
+.processing i {
+    margin-right: 10px;
+    font-size: 18px;
+}
+
+.processing span {
+    font-size: 14px;
+    font-weight: 300;
+}
+
+/* Scrollbar styling */
+.chat-history::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-history::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.chat-history::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+.chat-history::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+    .ai-voice-assistant {
+        padding: 15px;
+        margin: 5px;
+    }
+    
+    .status-icon {
+        font-size: 20px;
+    }
+    
+    .status-text {
+        font-size: 14px;
+    }
+    
+    .message {
+        font-size: 13px;
+        padding: 10px;
+    }
+}
+
+/* Dark theme adjustments */
+body.dark .ai-voice-assistant {
+    background: rgba(0, 0, 0, 0.9);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Light theme adjustments */
+body.light .ai-voice-assistant {
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light .status-icon.idle {
+    background: rgba(128, 128, 128, 0.2);
+    color: #666;
+}
+
+body.light .transcript {
+    background: rgba(33, 150, 243, 0.1);
+}
+
+body.light .message.user {
+    background: rgba(33, 150, 243, 0.1);
+}
+
+body.light .message.assistant {
+    background: rgba(76, 175, 80, 0.1);
+}
