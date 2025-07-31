@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const { Porcupine } = require("@picovoice/porcupine-node");
 const recorder = require("node-record-lpcm16");
 const { SpeechClient } = require('@google-cloud/speech');
+const path = require("path");
 
 module.exports = NodeHelper.create({
     start: function() {
@@ -24,7 +25,7 @@ module.exports = NodeHelper.create({
         }
     },
 
-        initializeAssistant: function() {
+    initializeAssistant: function() {
         try {
             // 1. Initialize Google Speech-to-Text
             // IMPORTANT: This requires separate authentication. See module docs.
@@ -34,7 +35,8 @@ module.exports = NodeHelper.create({
 
             // 2. Initialize Porcupine Hotword Detection
             const porcupineAccessKey = this.config.porcupineAccessKey; // Get this from Picovoice Console
-            const keywordPaths = [this.config.porcupineKeywordPath]; // Path to your .ppn file
+            const keywordPath = path.join(this.path, this.config.porcupineKeywordPath);
+            const keywordPaths = [keywordPath]; // Path to your .ppn file
             
             this.porcupine = new Porcupine(porcupineAccessKey, keywordPaths, [0.5]);
 
