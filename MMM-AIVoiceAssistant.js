@@ -2,22 +2,18 @@
 Module.register("MMM-AIVoiceAssistant", {
     defaults: {
         // AI Provider Configuration
-        aiProvider: "openai", // "openai", "gemini", or "chatgpt"
+        aiProvider: "gemini", // "openai", "gemini", or "chatgpt"
         openaiApiKey: "", // Your OpenAI API key
         geminiApiKey: "", // Your Google Gemini API key
+         porcupineAccessKey: "", // Get from Picovoice Console
         
-        // Voice Configuration
-        wakeWord: "hey redhawk", // Customizable wake word
-        language: "en-US",
-        voiceEnabled: true,
-        speechRate: 1.0,
-        speechPitch: 1.0,
-        speechVolume: 1.0,
-        
+        // --- NEW CONFIG FOR BACK-END ---
+        porcupineKeywordPath: "HeyRedhawk.ppn", // Path to your keyword file
+        googleSpeechCredentials: "/home/pi/speech-credentials.json",
+        wakeWord: "hey mirror",
+
         // UI Configuration
         maxWidth: "600px",
-        maxHeight: "400px",
-        animationSpeed: 1000,
         showTranscript: true,
         autoHideDelay: 10000, // Hide after 10 seconds of inactivity
         
@@ -31,19 +27,11 @@ Module.register("MMM-AIVoiceAssistant", {
 
     start: function() {
         Log.info(`Starting module: ${this.name}`);
-        this.isListening = false;
-        this.isProcessing = false;
+        this.status = "INITIALIZING";
+        this.statusText = "Initializing...";
+        this.transcript = "";
         this.chatHistory = [];
-        this.currentTranscript = "";
-        this.recognition = null;
-        this.synthesis = null;
-        this.hideTimer = null;
-        this.microphoneError = false;
-        this.audioStream = null;
-        this.recognitionActive = false; // Track recognition state
         
-        this.initializeSpeechRecognition();
-        this.initializeSpeechSynthesis();
         this.sendSocketNotification("INIT_MODULE", this.config);
     },
 
@@ -51,31 +39,16 @@ Module.register("MMM-AIVoiceAssistant", {
         const wrapper = document.createElement("div");
         wrapper.className = "ai-voice-assistant";
         wrapper.style.maxWidth = this.config.maxWidth;
-        wrapper.style.maxHeight = this.config.maxHeight;
 
         // Status indicator
         const statusDiv = document.createElement("div");
         statusDiv.className = "status-indicator";
-        
-        if (this.microphoneError) {
-            statusDiv.innerHTML = `
-                <div class="status-icon error">
-                    <i class="fas fa-microphone-slash"></i>
-                </div>
-                <div class="status-text error">
-                    Microphone Error - Check permissions and setup
-                </div>
-            `;
-        } else {
-            statusDiv.innerHTML = `
-                <div class="status-icon ${this.isListening ? 'listening' : 'idle'}">
-                    <i class="fas ${this.isListening ? 'fa-microphone' : 'fa-microphone-slash'}"></i>
-                </div>
-                <div class="status-text">
-                    ${this.isListening ? 'Listening...' : `Say "${this.config.wakeWord}" to start`}
-                </div>
-            `;
-        }
+        statusDiv.innerHTML = `
+            <div class="status-icon ${this.status.toLowerCase()}">
+                <i class="fas ${this.status === 'LISTENING' ? 'fa-microphone' : 'fa-microphone-slash'}"></i>
+            </div>
+            <div class="status-text">${this.statusText}</div>
+        `;
         wrapper.appendChild(statusDiv);
 
         // Transcript display
@@ -417,6 +390,18 @@ Module.register("MMM-AIVoiceAssistant", {
 
     socketNotificationReceived: function(notification, payload) {
         switch (notification) {
+             case "STATUS_UPDATE":
+                this.status = payload.status;
+                this.statusText = payload.text;
+                if (payload.status !== "LISTENING") {
+                    this.transcript = ""; // Clear transcript when not listening
+                }
+                this.updateDom();
+                break;
+            case "TRANSCRIPT_UPDATE":
+                this.transcript = payload.transcript;
+                this.updateDom();
+                break;
             case "AI_RESPONSE":
                 this.handleAIResponse(payload);
                 break;
