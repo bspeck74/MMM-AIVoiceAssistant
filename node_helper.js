@@ -1,4 +1,3 @@
-// Node helper file: MMM-AIVoiceAssistant/node_helper.js
 const NodeHelper = require("node_helper");
 const https = require("https");
 const { spawn } = require('child_process');
@@ -15,35 +14,30 @@ module.exports = NodeHelper.create({
         this.recorder = null;
         this.speechClient = null;
         this.isListeningForCommand = false;
+        this.chatHistory = []; // Initialize chat history
     },
 
     socketNotificationReceived: function(notification, payload) {
         if (notification === "INIT_MODULE") {
             this.config = payload;
-            // We now initialize everything here instead of on the front-end
             this.initializeAssistant();
         }
     },
 
     initializeAssistant: function() {
         try {
-            // 1. Initialize Google Speech-to-Text
-            // IMPORTANT: This requires separate authentication. See module docs.
             this.speechClient = new SpeechClient({
                 keyFilename: this.config.googleSpeechCredentials
             });
 
-            // 2. Initialize Porcupine Hotword Detection
-            const porcupineAccessKey = this.config.porcupineAccessKey; // Get this from Picovoice Console
+            const porcupineAccessKey = this.config.porcupineAccessKey;
             const keywordPath = path.join(this.path, this.config.porcupineKeywordPath);
-            const keywordPaths = [keywordPath]; // Path to your .ppn file
             
-            this.porcupine = new Porcupine(porcupineAccessKey, keywordPaths, [0.5]);
+            this.porcupine = new Porcupine(porcupineAccessKey, [keywordPath], [0.5]);
 
             const frameLength = this.porcupine.frameLength;
             const sampleRate = this.porcupine.sampleRate;
 
-            // 3. Start listening for the hotword
             this.recorder = recorder.record({
                 sampleRate: sampleRate,
                 channels: 1,
@@ -56,48 +50,47 @@ module.exports = NodeHelper.create({
 
             let audioBuffer = [];
             this.recorder.stream().on('data', (chunk) => {
-                // Convert the incoming chunk to an array of Int16 samples
                 const newSamples = new Int16Array(chunk.buffer, 0, chunk.length / Int16Array.BYTES_PER_ELEMENT);
                 audioBuffer = audioBuffer.concat(Array.from(newSamples));
 
-                // Process the buffer as long as it has enough data for a full frame
                 while (audioBuffer.length >= frameLength) {
                     const frame = audioBuffer.slice(0, frameLength);
-                    audioBuffer = audioBuffer.slice(frameLength); // Remove the processed frame
-
+                    audioBuffer = audioBuffer.slice(frameLength);
                     const keywordIndex = this.porcupine.process(frame);
 
                     if (keywordIndex !== -1) {
                         console.log("Hotword detected!");
                         this.handleHotword();
-                        return; // Stop processing this stream once hotword is found
+                        return;
                     }
                 }
             });
 
         } catch (error) {
             console.error("Failed to initialize assistant:", error);
-            this.sendSocketNotification("STATUS_UPDATE", { status: "ERROR", text: "Initialization Failed" });
+            this.sendSocketNotification("STATUS_UPDATE", { status: "ERROR", text: "Initialization Failed. Check logs." });
         }
     },
 
     handleHotword: function() {
         if (this.isListeningForCommand) return;
-
         this.isListeningForCommand = true;
+
+        // --- FIX 1: Gracefully stop the hotword recorder FIRST ---
+        if (this.recorder) {
+            this.recorder.stop();
+            this.recorder = null;
+        }
+        if (this.porcupine) {
+            this.porcupine.release();
+            this.porcupine = null;
+        }
+        // --- END OF FIX 1 ---
+
         this.sendSocketNotification("STATUS_UPDATE", { status: "LISTENING", text: "Listening..." });
 
-        // Stop the hotword recorder
-        this.recorder.stop();
-        this.porcupine.release();
-
-        // Start a new recording for the user's command
         const recognizeStream = this.speechClient.streamingRecognize({
-            config: {
-                encoding: 'LINEAR16',
-                sampleRateHertz: 16000,
-                languageCode: 'en-US',
-            },
+            config: { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'en-US' },
             interimResults: true,
         })
         .on('error', (err) => {
@@ -112,71 +105,119 @@ module.exports = NodeHelper.create({
             if (data.results[0] && data.results[0].isFinal) {
                 commandRecorder.stop();
                 recognizeStream.end();
-                this.processAIRequest({ message: transcript });
+                // --- FIX 2: Pass the chat history along with the message ---
+                this.processAIRequest({ message: transcript, chatHistory: this.chatHistory });
+                // --- END OF FIX 2 ---
             }
         });
 
         const commandRecorder = recorder.record({
             sampleRate: 16000,
             threshold: 0,
-            verbose: false,
             recorder: 'arecord',
         });
-
         commandRecorder.stream().pipe(recognizeStream);
 
-        // Timeout to stop listening after 10 seconds
         setTimeout(() => {
             if (this.isListeningForCommand) {
                 commandRecorder.stop();
+                this.resetToHotword();
             }
         }, 10000);
     },
 
     resetToHotword: function() {
         this.isListeningForCommand = false;
-        // Re-initialize to start listening for the hotword again
-        this.initializeAssistant();
+        setTimeout(() => this.initializeAssistant(), 100);
     },
 
     processAIRequest: async function(data) {
+        this.sendSocketNotification("STATUS_UPDATE", { status: "PROCESSING", text: "Thinking..." });
         try {
-            let response;
-            
+            let aiResponse;
             switch (this.config.aiProvider) {
                 case "openai":
                 case "chatgpt":
-                    response = await this.callOpenAI(data);
+                    aiResponse = await this.callOpenAI(data);
                     break;
                 case "gemini":
-                    response = await this.callGemini(data);
+                    aiResponse = await this.callGemini(data);
                     break;
                 default:
                     throw new Error("Invalid AI provider");
             }
             
-            this.sendSocketNotification("AI_RESPONSE", response);
+            // Update chat history
+            this.chatHistory.push({ role: 'user', content: data.message });
+            this.chatHistory.push({ role: 'assistant', content: aiResponse.content });
+            if (this.chatHistory.length > 10) { // Keep history trimmed
+                this.chatHistory = this.chatHistory.slice(-10);
+            }
+
+            this.sendSocketNotification("AI_RESPONSE_TEXT", { ...aiResponse, chatHistory: this.chatHistory });
+            await this.getAndPlayAudio(aiResponse.content);
+
         } catch (error) {
             console.error("AI request error:", error);
-            this.sendSocketNotification("AI_ERROR", error.message);
+            this.sendSocketNotification("AI_ERROR", { message: error.message });
+            this.resetToHotword();
         }
     },
 
+    getAndPlayAudio: function(text) {
+        return new Promise((resolve, reject) => {
+            const postData = JSON.stringify({
+                input: { text: text },
+                voice: { languageCode: 'en-US', ssmlGender: 'NEUTRAL' },
+                audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: 24000 }
+            });
+            const options = {
+                hostname: 'texttospeech.googleapis.com',
+                port: 443,
+                path: `/v1/text:synthesize?key=${this.config.geminiApiKey}`,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+            };
+            const req = https.request(options, (res) => {
+                const chunks = [];
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(Buffer.concat(chunks).toString());
+                        if (parsed.audioContent) {
+                            const audioBuffer = Buffer.from(parsed.audioContent, 'base64');
+                            const aplay = spawn('aplay', ['-r', '24000', '-f', 'S16_LE']);
+                            aplay.stdin.write(audioBuffer);
+                            aplay.stdin.end();
+                            aplay.on('close', () => {
+                                this.sendSocketNotification("AI_AUDIO_FINISHED");
+                                this.resetToHotword();
+                                resolve();
+                            });
+                        } else { reject(new Error("No audio content")); }
+                    } catch (e) { reject(e); }
+                });
+            });
+            req.on('error', reject);
+            req.write(postData);
+            req.end();
+        });
+    },
+
+    // --- YOUR ORIGINAL AI FUNCTIONS ---
     callOpenAI: function(data) {
         return new Promise((resolve, reject) => {
             const messages = [
                 { role: "system", content: this.config.systemPrompt },
-                ...data.chatHistory.slice(-6), // Last 6 messages for context
+                ...data.chatHistory.slice(-6),
                 { role: "user", content: data.message }
             ];
-
             const postData = JSON.stringify({
                 model: "gpt-3.5-turbo",
                 messages: messages,
                 max_tokens: 150,
                 temperature: 0.7
             });
-
             const options = {
                 hostname: 'api.openai.com',
                 port: 443,
@@ -188,31 +229,18 @@ module.exports = NodeHelper.create({
                     'Content-Length': Buffer.byteLength(postData)
                 }
             };
-
             const req = https.request(options, (res) => {
                 let responseData = '';
-                
-                res.on('data', (chunk) => {
-                    responseData += chunk;
-                });
-                
+                res.on('data', (chunk) => { responseData += chunk; });
                 res.on('end', () => {
                     try {
                         const parsed = JSON.parse(responseData);
                         if (parsed.choices && parsed.choices[0]) {
-                            resolve({
-                                content: parsed.choices[0].message.content,
-                                provider: "openai"
-                            });
-                        } else {
-                            reject(new Error("Invalid OpenAI response"));
-                        }
-                    } catch (error) {
-                        reject(error);
-                    }
+                            resolve({ content: parsed.choices[0].message.content, provider: "openai" });
+                        } else { reject(new Error("Invalid OpenAI response")); }
+                    } catch (error) { reject(error); }
                 });
             });
-
             req.on('error', reject);
             req.write(postData);
             req.end();
@@ -222,52 +250,28 @@ module.exports = NodeHelper.create({
     callGemini: function(data) {
         return new Promise((resolve, reject) => {
             const postData = JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `${this.config.systemPrompt}\n\nUser: ${data.message}`
-                    }]
-                }],
-                generationConfig: {
-                    maxOutputTokens: 150,
-                    temperature: 0.7
-                }
+                contents: [{ parts: [{ text: `${this.config.systemPrompt}\n\nUser: ${data.message}` }] }],
+                generationConfig: { maxOutputTokens: 150, temperature: 0.7 }
             });
-
             const options = {
                 hostname: 'generativelanguage.googleapis.com',
                 port: 443,
                 path: `/v1beta/models/gemini-pro:generateContent?key=${this.config.geminiApiKey}`,
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(postData)
-                }
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
             };
-
             const req = https.request(options, (res) => {
                 let responseData = '';
-                
-                res.on('data', (chunk) => {
-                    responseData += chunk;
-                });
-                
+                res.on('data', (chunk) => { responseData += chunk; });
                 res.on('end', () => {
                     try {
                         const parsed = JSON.parse(responseData);
                         if (parsed.candidates && parsed.candidates[0]) {
-                            resolve({
-                                content: parsed.candidates[0].content.parts[0].text,
-                                provider: "gemini"
-                            });
-                        } else {
-                            reject(new Error("Invalid Gemini response"));
-                        }
-                    } catch (error) {
-                        reject(error);
-                    }
+                            resolve({ content: parsed.candidates[0].content.parts[0].text, provider: "gemini" });
+                        } else { reject(new Error("Invalid Gemini response")); }
+                    } catch (error) { reject(error); }
                 });
             });
-
             req.on('error', reject);
             req.write(postData);
             req.end();
