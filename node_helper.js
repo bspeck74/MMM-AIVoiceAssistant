@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const { Porcupine } = require("@picovoice/porcupine-node");
 const recorder = require("node-record-lpcm16");
 const { SpeechClient } = require('@google-cloud/speech');
+const path = require("path");
 
 module.exports = NodeHelper.create({
     start: function() {
@@ -24,7 +25,7 @@ module.exports = NodeHelper.create({
         }
     },
 
-        initializeAssistant: function() {
+    initializeAssistant: function() {
         try {
             // 1. Initialize Google Speech-to-Text
             // IMPORTANT: This requires separate authentication. See module docs.
@@ -34,7 +35,8 @@ module.exports = NodeHelper.create({
 
             // 2. Initialize Porcupine Hotword Detection
             const porcupineAccessKey = this.config.porcupineAccessKey; // Get this from Picovoice Console
-            const keywordPaths = [this.config.porcupineKeywordPath]; // Path to your .ppn file
+            const keywordPath = path.join(this.path, this.config.porcupineKeywordPath);
+            const keywordPaths = [keywordPath]; // Path to your .ppn file
             
             this.porcupine = new Porcupine(porcupineAccessKey, keywordPaths, [0.5]);
 
@@ -52,13 +54,24 @@ module.exports = NodeHelper.create({
             console.log("Listening for hotword...");
             this.sendSocketNotification("STATUS_UPDATE", { status: "IDLE", text: `Say "${this.config.wakeWord}"` });
 
+            let audioBuffer = [];
             this.recorder.stream().on('data', (chunk) => {
-                const frame = new Int16Array(chunk.buffer, 0, chunk.length / Int16Array.BYTES_PER_ELEMENT);
-                const keywordIndex = this.porcupine.process(frame);
+                // Convert the incoming chunk to an array of Int16 samples
+                const newSamples = new Int16Array(chunk.buffer, 0, chunk.length / Int16Array.BYTES_PER_ELEMENT);
+                audioBuffer = audioBuffer.concat(Array.from(newSamples));
 
-                if (keywordIndex !== -1) {
-                    console.log("Hotword detected!");
-                    this.handleHotword();
+                // Process the buffer as long as it has enough data for a full frame
+                while (audioBuffer.length >= frameLength) {
+                    const frame = audioBuffer.slice(0, frameLength);
+                    audioBuffer = audioBuffer.slice(frameLength); // Remove the processed frame
+
+                    const keywordIndex = this.porcupine.process(frame);
+
+                    if (keywordIndex !== -1) {
+                        console.log("Hotword detected!");
+                        this.handleHotword();
+                        return; // Stop processing this stream once hotword is found
+                    }
                 }
             });
 
