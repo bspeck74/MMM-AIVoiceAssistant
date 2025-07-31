@@ -5,16 +5,19 @@ const { Porcupine } = require("@picovoice/porcupine-node");
 const recorder = require("node-record-lpcm16");
 const { SpeechClient } = require('@google-cloud/speech');
 const path = require("path");
+const { PassThrough } = require("stream");
 
 module.exports = NodeHelper.create({
     start: function() {
         console.log(`${this.name} helper started`);
         this.config = {};
         this.porcupine = null;
-        this.recorder = null;
         this.speechClient = null;
+        this.mainRecorder = null;
+        this.porcupineStream = null;
+        this.googleStream = null;
         this.isListeningForCommand = false;
-        this.chatHistory = []; // Initialize chat history
+        this.chatHistory = [];
     },
 
     socketNotificationReceived: function(notification, payload) {
@@ -26,45 +29,22 @@ module.exports = NodeHelper.create({
 
     initializeAssistant: function() {
         try {
-            this.speechClient = new SpeechClient({
-                keyFilename: this.config.googleSpeechCredentials
-            });
-
+            this.speechClient = new SpeechClient({ keyFilename: this.config.googleSpeechCredentials });
             const porcupineAccessKey = this.config.porcupineAccessKey;
             const keywordPath = path.join(this.path, this.config.porcupineKeywordPath);
-            
             this.porcupine = new Porcupine(porcupineAccessKey, [keywordPath], [0.5]);
 
-            const frameLength = this.porcupine.frameLength;
-            const sampleRate = this.porcupine.sampleRate;
-
-            this.recorder = recorder.record({
-                sampleRate: sampleRate,
+            // Start a single, continuous recording stream
+            this.mainRecorder = recorder.record({
+                sampleRate: this.porcupine.sampleRate,
                 channels: 1,
                 dataType: "int16",
                 recorder: "arecord",
             });
 
-            console.log("Listening for hotword...");
-            this.sendSocketNotification("STATUS_UPDATE", { status: "IDLE", text: `Say "${this.config.wakeWord}"` });
+            this.mainRecorder.stream().on('error', (err) => console.error("Recorder Error:", err));
 
-            let audioBuffer = [];
-            this.recorder.stream().on('data', (chunk) => {
-                const newSamples = new Int16Array(chunk.buffer, 0, chunk.length / Int16Array.BYTES_PER_ELEMENT);
-                audioBuffer = audioBuffer.concat(Array.from(newSamples));
-
-                while (audioBuffer.length >= frameLength) {
-                    const frame = audioBuffer.slice(0, frameLength);
-                    audioBuffer = audioBuffer.slice(frameLength);
-                    const keywordIndex = this.porcupine.process(frame);
-
-                    if (keywordIndex !== -1) {
-                        console.log("Hotword detected!");
-                        this.handleHotword();
-                        return;
-                    }
-                }
-            });
+            this.listenForHotword();
 
         } catch (error) {
             console.error("Failed to initialize assistant:", error);
@@ -72,64 +52,83 @@ module.exports = NodeHelper.create({
         }
     },
 
-    handleHotword: function() {
+    listenForHotword: function() {
+        if (!this.mainRecorder) return;
+        this.isListeningForCommand = false;
+        console.log("Listening for hotword...");
+        this.sendSocketNotification("STATUS_UPDATE", { status: "IDLE", text: `Say "${this.config.wakeWord}"` });
+
+        this.porcupineStream = this.mainRecorder.stream();
+        let audioBuffer = [];
+        const frameLength = this.porcupine.frameLength;
+
+        this.porcupineStream.on('data', (chunk) => {
+            const newSamples = new Int16Array(chunk.buffer, 0, chunk.length / Int16Array.BYTES_PER_ELEMENT);
+            audioBuffer = audioBuffer.concat(Array.from(newSamples));
+
+            while (audioBuffer.length >= frameLength) {
+                const frame = audioBuffer.slice(0, frameLength);
+                audioBuffer = audioBuffer.slice(frameLength);
+                const keywordIndex = this.porcupine.process(frame);
+
+                if (keywordIndex !== -1) {
+                    console.log("Hotword detected!");
+                    this.porcupineStream.pause(); // Pause the stream to stop processing
+                    this.handleCommand();
+                    return;
+                }
+            }
+        });
+    },
+
+    handleCommand: function() {
         if (this.isListeningForCommand) return;
         this.isListeningForCommand = true;
+        this.sendSocketNotification("STATUS_UPDATE", { status: "LISTENING", text: "Listening..." });
 
-        // Gracefully stop the hotword recorder FIRST
-        if (this.recorder) {
-            this.recorder.stop();
-            this.recorder = null;
-        }
-        if (this.porcupine) {
-            this.porcupine.release();
-            this.porcupine = null;
-        }
+        this.googleStream = this.speechClient.streamingRecognize({
+            config: { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'en-US' },
+            interimResults: true,
+        })
+        .on('error', (err) => {
+            console.error('Speech API Error:', err);
+            this.resetToHotword();
+        })
+        .on('data', (data) => {
+            const transcript = data.results[0]?.alternatives[0]?.transcript;
+            if (transcript) {
+                this.sendSocketNotification("TRANSCRIPT_UPDATE", { transcript: transcript });
+            }
+            if (data.results[0] && data.results[0].isFinal) {
+                this.mainRecorder.stream().unpipe(this.googleStream);
+                this.googleStream.end();
+                this.processAIRequest({ message: transcript, chatHistory: this.chatHistory });
+            }
+        });
+        
+        // Unpipe from any old listeners and pipe to Google Speech
+        this.mainRecorder.stream().unpipe();
+        this.mainRecorder.stream().pipe(this.googleStream);
 
-        // A short delay to ensure the microphone hardware is released
+        // Failsafe timeout
         setTimeout(() => {
-            this.sendSocketNotification("STATUS_UPDATE", { status: "LISTENING", text: "Listening..." });
-
-            const recognizeStream = this.speechClient.streamingRecognize({
-                config: { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'en-US' },
-                interimResults: true,
-            })
-            .on('error', (err) => {
-                console.error('Speech API Error:', err);
+            if (this.isListeningForCommand) {
                 this.resetToHotword();
-            })
-            .on('data', (data) => {
-                const transcript = data.results[0]?.alternatives[0]?.transcript;
-                if (transcript) {
-                    this.sendSocketNotification("TRANSCRIPT_UPDATE", { transcript: transcript });
-                }
-                if (data.results[0] && data.results[0].isFinal) {
-                    commandRecorder.stop();
-                    recognizeStream.end();
-                    // Pass the chat history along with the message
-                    this.processAIRequest({ message: transcript, chatHistory: this.chatHistory });
-                }
-            });
-
-            const commandRecorder = recorder.record({
-                sampleRate: 16000,
-                threshold: 0,
-                recorder: 'arecord',
-            });
-            commandRecorder.stream().pipe(recognizeStream);
-
-            setTimeout(() => {
-                if (this.isListeningForCommand) {
-                    commandRecorder.stop();
-                    this.resetToHotword();
-                }
-            }, 10000);
-        }, 250); // 250ms delay
+            }
+        }, 10000);
     },
 
     resetToHotword: function() {
+        if (this.googleStream) {
+            this.mainRecorder.stream().unpipe(this.googleStream);
+            this.googleStream.end();
+            this.googleStream = null;
+        }
+        if (this.porcupineStream) {
+            this.porcupineStream.resume();
+        }
         this.isListeningForCommand = false;
-        setTimeout(() => this.initializeAssistant(), 100);
+        this.sendSocketNotification("STATUS_UPDATE", { status: "IDLE", text: `Say "${this.config.wakeWord}"` });
     },
 
     processAIRequest: async function(data) {
@@ -148,10 +147,9 @@ module.exports = NodeHelper.create({
                     throw new Error("Invalid AI provider");
             }
             
-            // Update chat history
             this.chatHistory.push({ role: 'user', content: data.message });
             this.chatHistory.push({ role: 'assistant', content: aiResponse.content });
-            if (this.chatHistory.length > 10) { // Keep history trimmed
+            if (this.chatHistory.length > 10) {
                 this.chatHistory = this.chatHistory.slice(-10);
             }
 
@@ -197,12 +195,13 @@ module.exports = NodeHelper.create({
                             });
                         } else { 
                             console.error("TTS Error:", parsed);
+                            this.resetToHotword();
                             reject(new Error("No audio content in TTS response")); 
                         }
-                    } catch (e) { reject(e); }
+                    } catch (e) { this.resetToHotword(); reject(e); }
                 });
             });
-            req.on('error', reject);
+            req.on('error', (err) => { this.resetToHotword(); reject(err); });
             req.write(postData);
             req.end();
         });
@@ -262,7 +261,7 @@ module.exports = NodeHelper.create({
             const options = {
                 hostname: 'generativelanguage.googleapis.com',
                 port: 443,
-                path: `/v1beta/models/gemini-pro:generateContent?key=${this.config.geminiApiKey}`,
+                path: `/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${this.config.geminiApiKey}`,
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
             };

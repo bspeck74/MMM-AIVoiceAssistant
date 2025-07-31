@@ -2,7 +2,7 @@
 Module.register("MMM-AIVoiceAssistant", {
     defaults: {
         // AI Provider Configuration
-        aiProvider: "gemini", // "openai", "gemini", or "chatgpt"
+        aiProvider: "", // "openai", "gemini", or "chatgpt"
         openaiApiKey: "", // Your OpenAI API key
         geminiApiKey: "", // Your Google Gemini API key
          porcupineAccessKey: "", // Get from Picovoice Console
