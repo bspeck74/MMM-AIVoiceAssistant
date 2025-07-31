@@ -76,7 +76,7 @@ module.exports = NodeHelper.create({
         if (this.isListeningForCommand) return;
         this.isListeningForCommand = true;
 
-        // --- FIX 1: Gracefully stop the hotword recorder FIRST ---
+        // Gracefully stop the hotword recorder FIRST
         if (this.recorder) {
             this.recorder.stop();
             this.recorder = null;
@@ -85,45 +85,46 @@ module.exports = NodeHelper.create({
             this.porcupine.release();
             this.porcupine = null;
         }
-        // --- END OF FIX 1 ---
 
-        this.sendSocketNotification("STATUS_UPDATE", { status: "LISTENING", text: "Listening..." });
-
-        const recognizeStream = this.speechClient.streamingRecognize({
-            config: { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'en-US' },
-            interimResults: true,
-        })
-        .on('error', (err) => {
-            console.error('Speech API Error:', err);
-            this.resetToHotword();
-        })
-        .on('data', (data) => {
-            const transcript = data.results[0]?.alternatives[0]?.transcript;
-            if (transcript) {
-                this.sendSocketNotification("TRANSCRIPT_UPDATE", { transcript: transcript });
-            }
-            if (data.results[0] && data.results[0].isFinal) {
-                commandRecorder.stop();
-                recognizeStream.end();
-                // --- FIX 2: Pass the chat history along with the message ---
-                this.processAIRequest({ message: transcript, chatHistory: this.chatHistory });
-                // --- END OF FIX 2 ---
-            }
-        });
-
-        const commandRecorder = recorder.record({
-            sampleRate: 16000,
-            threshold: 0,
-            recorder: 'arecord',
-        });
-        commandRecorder.stream().pipe(recognizeStream);
-
+        // A short delay to ensure the microphone hardware is released
         setTimeout(() => {
-            if (this.isListeningForCommand) {
-                commandRecorder.stop();
+            this.sendSocketNotification("STATUS_UPDATE", { status: "LISTENING", text: "Listening..." });
+
+            const recognizeStream = this.speechClient.streamingRecognize({
+                config: { encoding: 'LINEAR16', sampleRateHertz: 16000, languageCode: 'en-US' },
+                interimResults: true,
+            })
+            .on('error', (err) => {
+                console.error('Speech API Error:', err);
                 this.resetToHotword();
-            }
-        }, 10000);
+            })
+            .on('data', (data) => {
+                const transcript = data.results[0]?.alternatives[0]?.transcript;
+                if (transcript) {
+                    this.sendSocketNotification("TRANSCRIPT_UPDATE", { transcript: transcript });
+                }
+                if (data.results[0] && data.results[0].isFinal) {
+                    commandRecorder.stop();
+                    recognizeStream.end();
+                    // Pass the chat history along with the message
+                    this.processAIRequest({ message: transcript, chatHistory: this.chatHistory });
+                }
+            });
+
+            const commandRecorder = recorder.record({
+                sampleRate: 16000,
+                threshold: 0,
+                recorder: 'arecord',
+            });
+            commandRecorder.stream().pipe(recognizeStream);
+
+            setTimeout(() => {
+                if (this.isListeningForCommand) {
+                    commandRecorder.stop();
+                    this.resetToHotword();
+                }
+            }, 10000);
+        }, 250); // 250ms delay
     },
 
     resetToHotword: function() {
@@ -194,7 +195,10 @@ module.exports = NodeHelper.create({
                                 this.resetToHotword();
                                 resolve();
                             });
-                        } else { reject(new Error("No audio content")); }
+                        } else { 
+                            console.error("TTS Error:", parsed);
+                            reject(new Error("No audio content in TTS response")); 
+                        }
                     } catch (e) { reject(e); }
                 });
             });
@@ -204,7 +208,6 @@ module.exports = NodeHelper.create({
         });
     },
 
-    // --- YOUR ORIGINAL AI FUNCTIONS ---
     callOpenAI: function(data) {
         return new Promise((resolve, reject) => {
             const messages = [
@@ -237,7 +240,10 @@ module.exports = NodeHelper.create({
                         const parsed = JSON.parse(responseData);
                         if (parsed.choices && parsed.choices[0]) {
                             resolve({ content: parsed.choices[0].message.content, provider: "openai" });
-                        } else { reject(new Error("Invalid OpenAI response")); }
+                        } else { 
+                            console.error("OpenAI Error:", parsed);
+                            reject(new Error("Invalid OpenAI response")); 
+                        }
                     } catch (error) { reject(error); }
                 });
             });
@@ -268,7 +274,10 @@ module.exports = NodeHelper.create({
                         const parsed = JSON.parse(responseData);
                         if (parsed.candidates && parsed.candidates[0]) {
                             resolve({ content: parsed.candidates[0].content.parts[0].text, provider: "gemini" });
-                        } else { reject(new Error("Invalid Gemini response")); }
+                        } else { 
+                            console.error("Gemini Error:", parsed);
+                            reject(new Error("Invalid Gemini response")); 
+                        }
                     } catch (error) { reject(error); }
                 });
             });
