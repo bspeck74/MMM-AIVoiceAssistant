@@ -1,0 +1,55 @@
+/*
+ * Custom CSS for MagicMirror
+ * This version uses highly specific selectors to override defaults.
+ */
+
+/* --- FINAL LAYOUT FOR 10" SCREEN --- */
+
+/* Drastically reduce the empty space at the very top and bottom */
+body {
+  margin: 15px 25px !important;
+}
+
+/* Move the top bar (clock) higher up and make it smaller */
+.region.top.bar .module.clock {
+  transform: scale(0.9);
+  padding-bottom: 0;
+  margin-bottom: -30px; /* Pulls the middle region up */
+}
+
+/* Move the weather up and make it much smaller */
+.region.top.right .module.weather {
+  transform: scale(0.75) !important;
+  transform-origin: top right !important;
+  margin-top: -25px !important; /* Pull it up significantly */
+}
+
+/* Force the news feed to the absolute bottom */
+.region.bottom.bar .module.newsfeed {
+  position: fixed !important;
+  bottom: 10px !important;
+  width: calc(100% - 50px) !important; /* Account for new body margins */
+  left: 25px !important;
+}
+
+/* --- THE FIX: Anchor the middle region instead of centering it --- */
+.region.middle.center {
+  top: 45%; /* Position the top of the region slightly above center */
+  transform: translateY(-50%); /* This was the old rule, we remove the Y transform */
+  transform: translateX(-50%); /* Keep it centered horizontally */
+  left: 50%;
+}
+/* --- END OF FIX --- */
+
+/* Style for your AI module when it's in the middle center */
+.region.middle.center .module.center-ai {
+  width: 90vw;
+  max-width: 500px; /* A more compact max width */
+  margin: 0 auto;
+}
+
+/* Style for your newsfeed to make it smaller */
+.region.bottom.bar .module.small-news .newsfeed-title,
+.region.bottom.bar .module.small-news .newsfeed-source {
+  font-size: 0.8em;
+}

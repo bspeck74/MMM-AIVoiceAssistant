@@ -1,15 +1,23 @@
 /* MMM-AIVoiceAssistant/MMM-AIVoiceAssistant.css */
+/* --- NEW RULES FOR LAYOUT CONTROL --- */
+.module.center-ai .ai-voice-assistant {
+  max-width: 450px; /* A more reasonable maximum width */
+  margin: 0 auto;   /* This centers the module in the middle region */
+}
 
+.module.small-news .newsfeed-title,
+.module.small-news .newsfeed-source {
+  font-size: 0.8em; /* Make the newsfeed text smaller */
+}
 .ai-voice-assistant {
     background: rgba(0, 0, 0, 0.7);
     border-radius: 15px;
-    padding: 20px;
-    margin: 10px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    padding: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
     backdrop-filter: blur(10px);
     color: white;
     font-family: 'Roboto', sans-serif;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     animation: slideIn 0.5s ease-out;
 }
 
@@ -91,10 +99,11 @@
 }
 
 .chat-history {
-    max-height: 300px;
+    max-height: 100px;
     overflow-y: auto;
-    margin: 15px 0;
-    padding: 5px;
+    word-wrap: break-word;
+    margin-top: 10px;
+    padding-right: 5px; /* Space for scrollbar */
 }
 
 .message {
@@ -123,10 +132,9 @@
     margin-left: 20px;
 }
 
-.message.assistant {
-    background: rgba(76, 175, 80, 0.3);
-    border-left: 4px solid #4CAF50;
-    margin-right: 20px;
+.message.model {
+    background: rgba(76, 175, 80, 0.2);
+    border-left: 3px solid #4CAF50;
 }
 
 .message-role {
