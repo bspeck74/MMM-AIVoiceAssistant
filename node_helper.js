@@ -106,7 +106,7 @@ module.exports = NodeHelper.create({
         
         console.log("Turning screen on...");
 
-        exec("sudo vcgencmd display_power 1", (error, stdout, stderr) => {
+        exec("wlr-randr --output HDMI-A-1 --on", (error, stdout, stderr) => {
             if (error) {
                 console.error(`Screen on error: ${error}`);
             }
@@ -390,7 +390,7 @@ module.exports = NodeHelper.create({
     sleepMirror: function() {
         console.log("Turning screen off...");
 
-        exec("sudo vcgencmd display_power 0", (error, stdout, stderr) => {
+        exec("swlr-randr --output HDMI-A-1 --off", (error, stdout, stderr) => {
 
             if (error) {
                 console.error(`Screen off error: ${error}`);
@@ -433,7 +433,7 @@ module.exports = NodeHelper.create({
         }];
 
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash", 
+            model: "gemini-2.5-flash", 
             tools,
             systemInstruction: this.config.systemPrompt
         });
