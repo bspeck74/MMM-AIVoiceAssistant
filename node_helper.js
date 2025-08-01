@@ -105,6 +105,7 @@ module.exports = NodeHelper.create({
         if (this.isListeningForCommand) return;
         
         console.log("Turning screen on...");
+
         exec("sudo vcgencmd display_power 1", (error, stdout, stderr) => {
             if (error) {
                 console.error(`Screen on error: ${error}`);
@@ -388,7 +389,9 @@ module.exports = NodeHelper.create({
 
     sleepMirror: function() {
         console.log("Turning screen off...");
+
         exec("sudo vcgencmd display_power 0", (error, stdout, stderr) => {
+
             if (error) {
                 console.error(`Screen off error: ${error}`);
                 return JSON.stringify({ error: "Failed to turn off the screen." });
