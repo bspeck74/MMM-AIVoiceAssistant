@@ -61,6 +61,10 @@ let config = {
 				maxNumberOfDays: 3
 			}
 		},
+    {
+      module: "MMM-Mascot",
+      position: "top_left", // In the upper left-hand corner
+    },
 		{
 			module: "MMM-AIVoiceAssistant",
 			position: "middle_center", // In the center of the screen

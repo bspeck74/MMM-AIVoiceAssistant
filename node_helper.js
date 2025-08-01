@@ -103,7 +103,16 @@ module.exports = NodeHelper.create({
 
     handleCommand: function() {
         if (this.isListeningForCommand) return;
+        
+        console.log("Turning screen on...");
+        exec("sudo vcgencmd display_power 1", (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Screen on error: ${error}`);
+            }
+        });
+
         this.isListeningForCommand = true;
+        
         this.sendSocketNotification("STATUS_UPDATE", { status: "LISTENING", text: "Listening..." });
 
         let commandStarted = false;
@@ -377,6 +386,19 @@ module.exports = NodeHelper.create({
         }
     },
 
+    sleepMirror: function() {
+        console.log("Turning screen off...");
+        exec("sudo vcgencmd display_power 0", (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Screen off error: ${error}`);
+                return JSON.stringify({ error: "Failed to turn off the screen." });
+            }
+        });
+        // The resetToHotword function will be called after the AI responds, 
+        // ensuring the microphone is still listening.
+        return JSON.stringify({ status: "Screen is turning off." });
+    },
+
     callGeminiWithTools: async function(data) {
         const { GoogleGenerativeAI } = require("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(this.config.geminiApiKey);
@@ -390,6 +412,8 @@ module.exports = NodeHelper.create({
                 { name: "setReminder", description: "Set a reminder.", parameters: { type: "OBJECT", properties: { delayInMinutes: { type: "NUMBER" }, subject: { type: "STRING" } }, required: ["delayInMinutes", "subject"] } },
                 { name: "getCalendarEvents", description: "Get upcoming calendar events.", parameters: { type: "OBJECT", properties: {} } },
                 { name: "rebootMirror", description: "Reboot the device.", parameters: { type: "OBJECT", properties: {} } },
+                { name: "sleepMirror", description: "Turn the Magic Mirror screen off to put it to sleep.", parameters: { type: "OBJECT", properties: {} } },
+                
                 { 
                     name: "deepResearchAndEmail", 
                     description: "Performs in-depth research on a topic and emails the results. CRITICAL: If the user does not specify an email address, you MUST use the default email address configured on the system. Do not ask for one.", 
@@ -432,6 +456,7 @@ module.exports = NodeHelper.create({
             else if (functionCall.name === "getCalendarEvents") { apiResponse = await this.getCalendarEvents(); }
             else if (functionCall.name === "rebootMirror") { apiResponse = this.rebootMirror(); }
             else if (functionCall.name === "deepResearchAndEmail") { apiResponse = await this.deepResearchAndEmail(functionCall.args); }
+            else if (functionCall.name === "sleepMirror") {apiResponse = this.sleepMirror(); }
 
             if (apiResponse) {
                 const result2 = await chat.sendMessage([{
