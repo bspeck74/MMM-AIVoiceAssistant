@@ -199,6 +199,7 @@ module.exports = NodeHelper.create({
             const res = await this.customsearch.cse.list({
                 cx: this.config.googleSearchEngineId,
                 q: args.query,
+                num: 10
             });
             if (res.data.items && res.data.items.length > 0) {
                 const snippets = res.data.items.slice(0, 3).map(item => item.snippet);
@@ -311,81 +312,121 @@ module.exports = NodeHelper.create({
         return JSON.stringify({ status: "Rebooting now." });
     },
 
-    deepResearchAndEmail: async function(args) {
-        const { topic, emailAddress } = args;
-        const targetEmail = emailAddress || this.config.email.defaultEmail;
+    ddeepResearchAndEmail: async function(args) {
+    const { topic, emailAddress } = args;
+    const targetEmail = emailAddress || this.config.email.defaultEmail;
 
-        if (!targetEmail) {
-            return JSON.stringify({ error: "No email address was provided and no default is configured." });
-        }
-        if (!this.config.email || !this.config.email.user || !this.config.email.pass) {
-            return JSON.stringify({ error: "Email sending is not configured on the mirror." });
-        }
+    if (!targetEmail) {
+        return JSON.stringify({ error: "No email address provided and no default is configured." });
+    }
+    if (!this.config.email || !this.config.email.user || !this.config.email.pass) {
+        return JSON.stringify({ error: "Email sending is not configured on the mirror." });
+    }
 
-        console.log(`Starting deep research on: ${topic}`);
-        let searchResults = [];
-        const searchQueries = [`${topic} summary`, `key facts about ${topic}`, `history of ${topic}`];
-        for (const query of searchQueries) {
-            const resultText = await this.googleSearch({ query });
-            const result = JSON.parse(resultText);
-            if (!result.error) {
-                searchResults.push(...result);
-            }
-        }
-        const researchText = searchResults.join("\n\n");
+    this.sendSocketNotification("STATUS_UPDATE", { status: "PROCESSING", text: `Conducting deep research on ${topic}...` });
+    console.log(`Starting deep research on: ${topic}`);
 
-        // --- FIX: Correctly buffer the PDF data ---
-        const pdfBuffer = await new Promise((resolve) => {
-            const doc = new PDFDocument();
-            const buffers = [];
-            doc.on('data', buffers.push.bind(buffers));
-            doc.on('end', () => {
-                resolve(Buffer.concat(buffers));
-            });
-            doc.fontSize(25).text(`Research on: ${topic}`, { align: 'center' });
-            doc.moveDown();
-            doc.fontSize(12).text(researchText);
-            doc.end();
-        });
-        // --- END OF FIX ---
+    const searchQueries = {
+        "Overview": `${topic} comprehensive overview`,
+        "Key Aspects and Components": `key aspects of ${topic}`,
+        "History and Development": `history of ${topic}`,
+        "Current Applications and Importance": `importance and applications of ${topic}`,
+        "Criticisms and Controversies": `criticisms or controversies of ${topic}`,
+        "Academic Perspectives": `${topic} academic analysis OR scholarly articles`,
+    };
 
-        let transportOptions;
-        if (this.config.email.service) {
-            transportOptions = {
-                service: this.config.email.service,
-                auth: { user: this.config.email.user, pass: this.config.email.pass },
-            };
+    let researchContent = {};
+    let worksCited = new Set(); // Use a Set to avoid duplicate URLs
+
+    for (const [section, query] of Object.entries(searchQueries)) {
+        console.log(`Searching for: ${section}`);
+        const resultText = await this.googleSearch({ query });
+        const results = JSON.parse(resultText);
+
+        if (Array.isArray(results)) {
+            researchContent[section] = results.map(item => {
+                worksCited.add(item.link); // Add link to works cited list
+                return `Title: ${item.title}\nSnippet: ${item.snippet}\nSource: ${item.link}`;
+            }).join('\n\n');
         } else {
-            transportOptions = {
-                host: this.config.email.host,
-                port: this.config.email.port,
-                secure: this.config.email.secure,
-                auth: { user: this.config.email.user, pass: this.config.email.pass },
-            };
+            researchContent[section] = "No results found for this section.";
         }
-        const transporter = nodemailer.createTransport(transportOptions);
+    }
 
-        const mailOptions = {
-            from: this.config.email.user,
-            to: targetEmail,
-            subject: `Your Magic Mirror Research: ${topic}`,
-            text: `Here is the research you requested on "${topic}".`,
-            attachments: [{
-                filename: `${topic}_research.pdf`,
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-            }],
-        };
+    const pdfBuffer = await new Promise((resolve) => {
+        const doc = new PDFDocument({ layout: 'portrait', size: 'A4', margins: { top: 50, bottom: 50, left: 72, right: 72 } } );
+        const buffers = [];
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => resolve(Buffer.concat(buffers)));
 
-        try {
-            await transporter.sendMail(mailOptions);
-            console.log("Research email sent successfully.");
-            return JSON.stringify({ status: `Research on "${topic}" has been sent to ${targetEmail}.` });
-        } catch (error) {
-            console.error("Failed to send email:", error);
-            return JSON.stringify({ error: "Failed to send the research email." });
+        // --- PDF Content ---
+
+        // Title Page
+        doc.fontSize(24).text(`Deep Research Report:`, { align: 'center' });
+        doc.moveDown(0.5);
+        doc.fontSize(36).text(topic, { align: 'center', underline: true });
+        doc.moveDown(2);
+        doc.fontSize(12).text(`Generated on: ${new Date().toLocaleDateString()}`, { align: 'center' });
+        doc.addPage();
+
+        // Table of Contents
+        doc.fontSize(20).text('Table of Contents', { underline: true });
+        doc.moveDown();
+        Object.keys(searchQueries).forEach(section => {
+            doc.fontSize(12).text(section, { link: `#${section.replace(/\s/g, '_')}`, underline: false }); // Internal links not fully supported in all PDF viewers
+            doc.moveDown(0.5);
+        });
+        doc.addPage();
+
+
+        // Research Sections
+        for (const [section, content] of Object.entries(researchContent)) {
+            doc.fontSize(20).text(section, { underline: true });
+            doc.moveDown();
+            doc.fontSize(12).text(content, { align: 'left' });
+            doc.addPage();
         }
-    },
+
+        // Works Cited Page
+        doc.fontSize(20).text('Works Cited', { underline: true });
+        doc.moveDown();
+        Array.from(worksCited).forEach(link => {
+            doc.fontSize(10).fillColor('blue').text(link, { link: link, underline: true });
+            doc.moveDown(0.5);
+        });
+
+        doc.end();
+    });
+
+    // --- Email Logic ---
+    let transportOptions = this.config.email.service ?
+        { service: this.config.email.service, auth: { user: this.config.email.user, pass: this.config.email.pass } } :
+        { host: this.config.email.host, port: this.config.email.port, secure: this.config.email.secure, auth: { user: this.config.email.user, pass: this.config.email.pass } };
+
+    const transporter = nodemailer.createTransport(transportOptions);
+    const mailOptions = {
+        from: `"${this.name}" <${this.config.email.user}>`,
+        to: targetEmail,
+        subject: `Your Magic Mirror Research: ${topic}`,
+        text: `Attached is the deep research report you requested on "${topic}".\n\nThis report was compiled from various online sources and includes a "Works Cited" page for your reference.`,
+        attachments: [{
+            filename: `Research_${topic.replace(/\s/g, '_')}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+        }],
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log("Research email sent successfully.");
+        this.sendSocketNotification("STATUS_UPDATE", { status: "IDLE" });
+        return JSON.stringify({ status: `A comprehensive research report on "${topic}" has been compiled and sent to ${targetEmail}.` });
+    } catch (error) {
+        console.error("Failed to send email:", error);
+        this.sendSocketNotification("STATUS_UPDATE", { status: "ERROR", text: "Failed to email report." });
+        return JSON.stringify({ error: "Failed to send the research email." });
+    }
+},
 
     sleepMirror: function() {
         console.log("Turning screen off...");
@@ -476,7 +517,7 @@ module.exports = NodeHelper.create({
         return { content: response.text(), provider: "gemini" };
     },
 
-   getAndPlayAudio: function(text) {
+    getAndPlayAudio: function(text) {
         return new Promise((resolve, reject) => {
             const postData = JSON.stringify({
                 input: { text: text },
@@ -503,7 +544,9 @@ module.exports = NodeHelper.create({
                             aplay.stdin.end();
                             aplay.on('close', () => {
                                 this.sendSocketNotification("AI_AUDIO_FINISHED");
+                                setTimeout(() => {
                                 this.resetToHotword();
+                            }, 2000); // 2-second delay for cooldown
                                 resolve();
                             });
                         } else { 
