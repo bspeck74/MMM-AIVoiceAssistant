@@ -402,7 +402,7 @@ Module.register("MMM-AIVoiceAssistant", {
                 this.transcript = payload.transcript;
                 this.updateDom();
                 break;
-            case "AI_RESPONSE_TEXT":
+            case "AI_RESPONSE":
                 this.handleAIResponse(payload);
                 break;
             case "AI_ERROR":
