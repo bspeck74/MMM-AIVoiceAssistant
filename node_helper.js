@@ -12,6 +12,7 @@ const ical = require('node-ical');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 
+
 module.exports = NodeHelper.create({
     start: function() {
         console.log(`${this.name} helper started`);
@@ -431,7 +432,7 @@ module.exports = NodeHelper.create({
     sleepMirror: function() {
         console.log("Turning screen off...");
 
-        exec("swlr-randr --output HDMI-A-1 --off", (error, stdout, stderr) => {
+        exec("wlr-randr --output HDMI-A-1 --off", (error, stdout, stderr) => {
 
             if (error) {
                 console.error(`Screen off error: ${error}`);
